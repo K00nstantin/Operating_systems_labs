@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Barrier - Метод Гаусса</title>
+<style>
+  :root {
+    --bg: #1e1e2e; --surface: #313244; --surface2: #45475a; --text: #cdd6f4;
+    --blue: #89b4fa; --peach: #fab387; --red: #f38ba8; --green: #a6e3a1;
+    --dim: #6c7086;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; font-family: "JetBrains Mono", monospace; background: var(--bg); color: var(--text); }
+  h1 { font-size: 18px; margin: 0 0 16px 0; display: flex; justify-content: space-between; align-items: center; }
+  a { color: var(--blue); text-decoration: none; font-size: 14px; }
+  a:hover { text-decoration: underline; }
+  
+  .header { display: flex; gap: 12px; margin-bottom: 20px; }
+  .stat { background: var(--surface); padding: 8px 14px; border-radius: 6px; font-size: 13px; }
+  .stat b { color: var(--blue); }
+  
+  .threads { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+  .thread { display: flex; align-items: center; gap: 12px; background: var(--surface); padding: 10px 14px; border-radius: 8px; }
+  .thread-label { width: 44px; font-weight: 700; }
+  .thread-state { flex: 1; height: 34px; border-radius: 6px; display: flex; align-items: center; padding: 0 14px; font-size: 13px; font-weight: 600; transition: background 0.25s; }
+  .state-idle { background: var(--surface2); color: var(--text); }
+  .state-work { background: var(--blue); color: var(--bg); }
+  .state-prep { background: var(--red); color: var(--bg); animation: pulse 0.5s infinite; }
+  
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  .matrix-wrap { background: var(--surface); padding: 24px; border-radius: 10px; width: fit-content; }
+  .matrix-container { display: grid; gap: 4px; }
+  .matrix-row { display: flex; gap: 4px; }
+  
+  .cell { width: 72px; height: 44px; display: flex; align-items: center; justify-content: center; background: var(--surface2); border-radius: 4px; font-size: 13px; transition: all 0.3s; }
+  .cell.zero { background: var(--bg); color: var(--dim); border: 1px solid var(--surface2); }
+  .cell.pivot { background: var(--red); color: var(--bg); font-weight: bold; transform: scale(1.05); box-shadow: 0 0 10px var(--red); }
+  .cell.active { background: var(--peach); color: var(--bg); font-weight: bold; transform: scale(1.02); }
+  .cell.divider { margin-right: 16px; border-right: 2px solid var(--text); border-radius: 0; height: 44px; width: 12px; background: transparent; }
+</style>
+</head>
+<body>
+
+<h1>Barrier — Метод Гаусса <a href="/">← Назад к абстракции</a></h1>
+
+<div class="header">
+  <div class="stat">Текущий столбец: <b id="round">-</b></div>
+  <div class="stat">Статус: <b id="status">Ожидание...</b></div>
+</div>
+
+<div class="threads" id="threads"></div>
+
+<div class="matrix-wrap">
+  <div class="matrix-container" id="matrix"></div>
+</div>
+
+<script>
+const LABELS = { idle: "Idle (Waiting)", work: "Processing Rows", prep: "PREP (Finding Pivot)" };
+const threadEls = {};
+
+for (let i = 0; i < 5; i++) {
+  const row = document.createElement("div");
+  row.className = "thread";
+  row.innerHTML = `<div class="thread-label">T${i}</div><div class="thread-state state-idle" id="state-${i}">Idle</div>`;
+  document.getElementById("threads").appendChild(row);
+}
+
+function setState(id, state) {
+  if (id < 0 || id > 4) return;
+  const el = document.getElementById(`state-${id}`);
+  el.className = `thread-state state-${state}`;
+  el.textContent = LABELS[state] || state;
+}
+
+let currentMatrix = null;
+let activeRows = [];
+
+function renderMatrix(matrix, activeCol = -1) {
+  const container = document.getElementById("matrix");
+  container.innerHTML = "";
+  if (!matrix) return;
+
+  matrix.forEach((row, i) => {
+    const rowEl = document.createElement("div");
+    rowEl.className = "matrix-row";
+    
+    row.forEach((val, j) => {
+      if (j === matrix.length) {
+        const div = document.createElement("div");
+        div.className = "cell divider";
+        rowEl.appendChild(div);
+      }
+
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      
+      if (Math.abs(val) < 0.0001) {
+        cell.classList.add("zero");
+        cell.textContent = "0.00";
+      } else {
+        cell.textContent = val.toFixed(2);
+      }
+
+      // Красная строка (ведущая)
+      if (i === activeCol && j >= activeCol) {
+        cell.classList.add("pivot");
+      }
+      
+      // Оранжевая строка (активная)
+      if (activeRows.includes(i) && j >= activeCol) {
+        cell.classList.add("active");
+      }
+
+      rowEl.appendChild(cell);
+    });
+    container.appendChild(rowEl);
+  });
+}
+
+const es = new EventSource("/gauss-events");
+es.onmessage = (e) => {
+  const ev = JSON.parse(e.data);
+  
+  if (ev.type === "gauss_state") {
+    setState(ev.thread, ev.state);
+  } 
+  else if (ev.type === "gauss_init") {
+    currentMatrix = ev.matrix;
+    activeRows = [];
+    document.getElementById("status").textContent = "Матрица инициализирована";
+    document.getElementById("round").textContent = "-";
+    for (let i = 0; i < 5; i++) setState(i, "idle");
+    renderMatrix(currentMatrix);
+  } 
+  else if (ev.type === "gauss_prep") {
+    currentMatrix = ev.matrix;
+    activeRows = [];
+    document.getElementById("status").textContent = "Выбор ведущего элемента...";
+    document.getElementById("round").textContent = ev.col;
+    renderMatrix(currentMatrix, ev.col);
+  } 
+  else if (ev.type === "gauss_work_start") {
+    // Добавляем строки, которых еще нет в массиве
+    if (ev.activeRows) {
+      ev.activeRows.forEach(r => {
+        if (!activeRows.includes(r)) activeRows.push(r);
+      });
+    }
+    document.getElementById("status").textContent = `Активные строки: ${activeRows.join(", ")}`;
+    renderMatrix(currentMatrix, ev.col);
+  }
+  else if (ev.type === "gauss_matrix") {
+    currentMatrix = ev.matrix;
+    // Удаляем строки, которые закончили работу
+    if (ev.activeRows) {
+      activeRows = activeRows.filter(r => !ev.activeRows.includes(r));
+    }
+    
+    if (activeRows.length === 0) {
+      document.getElementById("status").textContent = "Ожидание следующего шага...";
+    } else {
+      document.getElementById("status").textContent = `Активные строки: ${activeRows.join(", ")}`;
+    }
+    renderMatrix(currentMatrix, ev.col);
+  }
+  else if (ev.type === "gauss_finished") {
+    document.getElementById("status").textContent = "Матрица приведена к треугольному виду";
+    for (let i = 0; i < 5; i++) setState(i, "idle");
+  }
+};
+</script>
+</body>
+</html>

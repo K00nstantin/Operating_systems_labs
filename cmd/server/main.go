@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
+	"math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -15,19 +17,22 @@ import (
 //go:embed index.html
 var indexHTML []byte
 
-// --- Событие, которое уходит в браузер ---
+//go:embed gauss.html
+var gaussHTML []byte
 
 type Event struct {
-	Type   string `json:"type"`
-	Thread int    `json:"thread"`
-	State  string `json:"state"`
-	Round  int    `json:"round"`
-	N      int    `json:"n"`
-	Count  uint32 `json:"count"`
-	Sense  uint32 `json:"sense"`
+	Type       string      `json:"type"`
+	Thread     int         `json:"thread"`
+	State      string      `json:"state"`
+	Round      int         `json:"round"`
+	N          int         `json:"n"`
+	Count      uint32      `json:"count"`
+	Sense      uint32      `json:"sense"`
+	Matrix     [][]float64 `json:"matrix,omitempty"`
+	Row        int         `json:"row,omitempty"`
+	Col        int         `json:"col,omitempty"`
+	ActiveRows []int       `json:"activeRows,omitempty"`
 }
-
-// --- Хаб: следит за последним состоянием и рассылает события ---
 
 type Hub struct {
 	mu     sync.Mutex
@@ -63,12 +68,10 @@ func (h *Hub) Remove(ch chan []byte) {
 	h.mu.Unlock()
 }
 
-// Broadcast обновляет внутреннее состояние и шлёт событие всем подписчикам.
 func (h *Hub) Broadcast(e Event) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Обновляем "последнее известное" состояние.
 	switch e.Type {
 	case "reset":
 		h.round = 0
@@ -77,7 +80,7 @@ func (h *Hub) Broadcast(e Event) {
 		for i := range h.states {
 			h.states[i] = "idle"
 		}
-	case "state":
+	case "state", "gauss_state":
 		if e.Thread >= 0 && e.Thread < len(h.states) {
 			h.states[e.Thread] = e.State
 		}
@@ -94,12 +97,10 @@ func (h *Hub) Broadcast(e Event) {
 		select {
 		case ch <- data:
 		default:
-			// Медленный подписчик — пропускаем, чтобы не блокировать остальных.
 		}
 	}
 }
 
-// InitEventLocked — стартовое событие для нового подписчика.
 func (h *Hub) InitEventLocked() []byte {
 	e := Event{
 		Type:  "reset",
@@ -112,7 +113,6 @@ func (h *Hub) InitEventLocked() []byte {
 	return data
 }
 
-// SSEHandler — HTTP-обработчик для /events.
 func (h *Hub) SSEHandler(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -129,7 +129,6 @@ func (h *Hub) SSEHandler(w http.ResponseWriter, r *http.Request) {
 	h.Add(ch)
 	defer h.Remove(ch)
 
-	// Отправляем текущее состояние новому подписчику.
 	h.mu.Lock()
 	initData := h.InitEventLocked()
 	states := make([]string, len(h.states))
@@ -137,7 +136,6 @@ func (h *Hub) SSEHandler(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 
 	fmt.Fprintf(w, "data: %s\n\n", initData)
-	// Досылаем состояния всех потоков, чтобы клиент сразу видел картину.
 	for i, st := range states {
 		e := Event{Type: "state", Thread: i, State: st}
 		if st == "work" {
@@ -165,13 +163,11 @@ func (h *Hub) SSEHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// --- Демо: N горутин, rounds раундов ---
-
+// --- Демо 1: Абстрактный барьер ---
 func runDemo(hub *Hub, n, rounds int) {
 	b := syncprim.NewBarrier(n)
 	hub.Broadcast(Event{Type: "reset", N: n})
 
-	// Тикер «снимков» для count/sense.
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
@@ -183,11 +179,7 @@ func runDemo(hub *Hub, n, rounds int) {
 			case <-stop:
 				return
 			case <-ticker.C:
-				hub.Broadcast(Event{
-					Type:  "snapshot",
-					Count: b.Count(),
-					Sense: b.Sense(),
-				})
+				hub.Broadcast(Event{Type: "snapshot", Count: b.Count(), Sense: b.Sense()})
 			}
 		}
 	}()
@@ -198,20 +190,16 @@ func runDemo(hub *Hub, n, rounds int) {
 		go func(id int) {
 			defer wg.Done()
 			for r := 0; r < rounds; r++ {
-				// 1. Полезная работа — разной длины, чтобы приходили вразнобой.
 				hub.Broadcast(Event{Type: "state", Thread: id, State: "work", Round: r})
 				time.Sleep(time.Duration(800+id*400) * time.Millisecond)
 
-				// 2. Пришли к барьеру.
 				hub.Broadcast(Event{Type: "state", Thread: id, State: "arrive", Round: r})
 
-				// 3. Барьер с лидером.
 				b.WaitLeader(func() {
 					hub.Broadcast(Event{Type: "state", Thread: id, State: "prep", Round: r})
-					time.Sleep(1500 * time.Millisecond) // имитация подготовки
+					time.Sleep(1500 * time.Millisecond)
 				})
 
-				// 4. Прошли барьер.
 				hub.Broadcast(Event{Type: "state", Thread: id, State: "pass", Round: r})
 				time.Sleep(600 * time.Millisecond)
 			}
@@ -224,21 +212,127 @@ func runDemo(hub *Hub, n, rounds int) {
 	<-done
 }
 
-// --- main ---
+// --- Демо 2: Метод Гаусса ---
+func runGaussDemo(hub *Hub, n int) {
+	b := syncprim.NewBarrier(n)
+
+	matrix := make([][]float64, n)
+	for i := range matrix {
+		matrix[i] = make([]float64, n+1)
+		for j := range matrix[i] {
+			matrix[i][j] = float64(rand.Intn(9) + 1)
+		}
+	}
+
+	copyMatrix := func(m [][]float64) [][]float64 {
+		c := make([][]float64, len(m))
+		for i := range m {
+			c[i] = make([]float64, len(m[i]))
+			copy(c[i], m[i])
+		}
+		return c
+	}
+
+	hub.Broadcast(Event{Type: "gauss_init", Matrix: copyMatrix(matrix)})
+	time.Sleep(5 * time.Second)
+
+	var matrixMu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(n)
+
+	for i := 0; i < n; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for col := 0; col < n-1; col++ {
+
+				b.WaitLeader(func() {
+					hub.Broadcast(Event{Type: "gauss_state", Thread: id, State: "prep"})
+
+					matrixMu.Lock()
+					maxRow := col
+					for i := col + 1; i < n; i++ {
+						if math.Abs(matrix[i][col]) > math.Abs(matrix[maxRow][col]) {
+							maxRow = i
+						}
+					}
+					matrix[col], matrix[maxRow] = matrix[maxRow], matrix[col]
+					pivot := matrix[col][col]
+					for j := col; j <= n; j++ {
+						matrix[col][j] /= pivot
+					}
+					matrixMu.Unlock()
+
+					hub.Broadcast(Event{Type: "gauss_prep", Col: col, Matrix: copyMatrix(matrix)})
+					time.Sleep(3 * time.Second)
+				})
+
+				hub.Broadcast(Event{Type: "gauss_state", Thread: id, State: "work"})
+
+				var myRows []int
+				for r := col + 1 + id; r < n; r += n {
+					myRows = append(myRows, r)
+				}
+
+				if len(myRows) > 0 {
+					// ЗАДЕРЖКА 100МС: Даем браузеру время отрисовать предыдущую строку
+					time.Sleep(100 * time.Millisecond)
+
+					hub.Broadcast(Event{
+						Type:       "gauss_work_start",
+						Thread:     id,
+						ActiveRows: myRows,
+						Col:        col,
+					})
+
+					// Потоки "работают" параллельно (3 секунды)
+					time.Sleep(3 * time.Second)
+
+					matrixMu.Lock()
+					for _, r := range myRows {
+						mult := matrix[r][col]
+						for j := col; j <= n; j++ {
+							matrix[r][j] -= mult * matrix[col][j]
+						}
+					}
+					snap := copyMatrix(matrix)
+					matrixMu.Unlock()
+
+					hub.Broadcast(Event{
+						Type:       "gauss_matrix",
+						Col:        col,
+						Matrix:     snap,
+						ActiveRows: myRows,
+					})
+				}
+
+				hub.Broadcast(Event{Type: "gauss_state", Thread: id, State: "idle"})
+				time.Sleep(1 * time.Second)
+			}
+		}(i)
+	}
+	wg.Wait()
+	hub.Broadcast(Event{Type: "gauss_finished"})
+	time.Sleep(3 * time.Second)
+}
 
 func main() {
-	const (
-		n      = 5
-		rounds = 2
-	)
+	const n = 5
 
-	hub := NewHub(n)
-
-	// Демо-цикл: прогон → пауза 2с → снова.
+	// Хаб 1
+	hub1 := NewHub(n)
 	go func() {
 		for {
-			runDemo(hub, n, rounds)
-			hub.Broadcast(Event{Type: "finished"})
+			runDemo(hub1, n, 2)
+			hub1.Broadcast(Event{Type: "finished"})
+			time.Sleep(5 * time.Second)
+		}
+	}()
+
+	// Хаб 2
+	hub2 := NewHub(n)
+	go func() {
+		for {
+			runGaussDemo(hub2, n)
 			time.Sleep(5 * time.Second)
 		}
 	}()
@@ -247,8 +341,15 @@ func main() {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(indexHTML)
 	})
-	http.HandleFunc("/events", hub.SSEHandler)
+	http.HandleFunc("/events", hub1.SSEHandler)
 
-	log.Println("http://localhost:8080")
+	http.HandleFunc("/gauss", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(gaussHTML)
+	})
+	http.HandleFunc("/gauss-events", hub2.SSEHandler)
+
+	log.Println("Абстрактная визуализация: http://localhost:8080/")
+	log.Println("Метод Гаусса:            http://localhost:8080/gauss")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }

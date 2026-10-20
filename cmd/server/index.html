@@ -5,110 +5,45 @@
 <title>Barrier Visualization</title>
 <style>
   :root {
-    --bg: #1e1e2e;
-    --surface: #313244;
-    --surface2: #45475a;
-    --text: #cdd6f4;
-    --blue: #89b4fa;
-    --peach: #fab387;
-    --red: #f38ba8;
-    --green: #a6e3a1;
-    --teal: #94e2d5;
-    --pink: #f5c2e7;
+    --bg: #1e1e2e; --surface: #313244; --surface2: #45475a; --text: #cdd6f4;
+    --blue: #89b4fa; --peach: #fab387; --red: #f38ba8; --green: #a6e3a1; --teal: #94e2d5;
   }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; padding: 24px;
-    font-family: "JetBrains Mono", "Fira Code", monospace;
-    background: var(--bg); color: var(--text);
-  }
-  h1 { font-size: 18px; margin: 0 0 16px 0; font-weight: 600; }
-  .header {
-    display: flex; gap: 12px; flex-wrap: wrap;
-    margin-bottom: 20px;
-  }
-  .stat {
-    background: var(--surface);
-    padding: 8px 14px;
-    border-radius: 6px;
-    font-size: 13px;
-  }
+  body { margin: 0; padding: 24px; font-family: "JetBrains Mono", "Fira Code", monospace; background: var(--bg); color: var(--text); }
+  h1 { font-size: 18px; margin: 0 0 16px 0; display: flex; justify-content: space-between; }
+  a { color: var(--blue); text-decoration: none; font-size: 14px; }
+  a:hover { text-decoration: underline; }
+  
+  .header { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  .stat { background: var(--surface); padding: 8px 14px; border-radius: 6px; font-size: 13px; }
   .stat b { color: var(--blue); }
   .stat.phase0 b { color: var(--blue); }
   .stat.phase1 b { color: var(--pink); }
   .threads { display: flex; flex-direction: column; gap: 8px; }
-  .thread {
-    display: flex; align-items: center; gap: 12px;
-    background: var(--surface);
-    padding: 10px 14px;
-    border-radius: 8px;
-    transition: background 0.2s;
-  }
-  .thread-label {
-    width: 44px; font-weight: 700; color: var(--text);
-  }
-  .thread-state {
-    flex: 1;
-    height: 34px;
-    border-radius: 6px;
-    display: flex; align-items: center;
-    padding: 0 14px;
-    font-size: 13px; font-weight: 600;
-    transition: background 0.25s, color 0.25s, transform 0.15s;
-  }
-  .state-idle    { background: var(--surface2); color: var(--text); }
-  .state-work    { background: var(--blue);     color: var(--bg); }
-  .state-arrive  { background: var(--peach);    color: var(--bg); }
-  .state-prep    { background: var(--red);      color: var(--bg); animation: pulse 0.5s infinite; }
-  .state-pass    { background: var(--green);    color: var(--bg); }
-  .state-done    { background: var(--teal);     color: var(--bg); }
+  .thread { display: flex; align-items: center; gap: 12px; background: var(--surface); padding: 10px 14px; border-radius: 8px; }
+  .thread-label { width: 44px; font-weight: 700; }
+  .thread-state { flex: 1; height: 34px; border-radius: 6px; display: flex; align-items: center; padding: 0 14px; font-size: 13px; font-weight: 600; transition: background 0.25s, color 0.25s, transform 0.15s; }
+  .state-idle { background: var(--surface2); color: var(--text); }
+  .state-work { background: var(--blue); color: var(--bg); }
+  .state-arrive { background: var(--peach); color: var(--bg); }
+  .state-prep { background: var(--red); color: var(--bg); animation: pulse 0.5s infinite; }
+  .state-pass { background: var(--green); color: var(--bg); }
+  .state-done { background: var(--teal); color: var(--bg); }
 
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50%      { opacity: 0.55; }
-  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
-  .barrier-wrap {
-    margin-top: 22px;
-    background: var(--surface);
-    padding: 18px;
-    border-radius: 10px;
-  }
-  .barrier-title {
-    display: flex; justify-content: space-between;
-    font-size: 12px; color: #9399b2;
-    margin-bottom: 10px;
-  }
-  .barrier-track {
-    height: 26px;
-    background: var(--surface2);
-    border-radius: 13px;
-    overflow: hidden;
-  }
-  .barrier-fill {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, var(--peach), var(--red));
-    transition: width 0.25s;
-    border-radius: 13px;
-  }
-  .legend {
-    margin-top: 18px; display: flex; gap: 16px; flex-wrap: wrap;
-    font-size: 12px; color: #9399b2;
-  }
+  .barrier-wrap { margin-top: 22px; background: var(--surface); padding: 18px; border-radius: 10px; }
+  .barrier-title { display: flex; justify-content: space-between; font-size: 12px; color: #9399b2; margin-bottom: 10px; }
+  .barrier-track { height: 26px; background: var(--surface2); border-radius: 13px; overflow: hidden; }
+  .barrier-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--peach), var(--red)); transition: width 0.25s; border-radius: 13px; }
+  .legend { margin-top: 18px; display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #9399b2; }
   .legend span { display: flex; align-items: center; gap: 6px; }
-  .legend i {
-    display: inline-block; width: 12px; height: 12px; border-radius: 3px;
-  }
-  .status {
-    margin-top: 14px; font-size: 13px; color: #9399b2;
-    text-align: center;
-  }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
 </style>
 </head>
 <body>
 
-<h1>Barrier — визуализация</h1>
+<h1>Barrier — Визуализация <a href="/gauss">Перейти к методу Гаусса →</a></h1>
 
 <div class="header">
   <div class="stat">Round: <b id="round">0</b></div>
@@ -123,72 +58,38 @@
     <span>Барьер: собралось</span>
     <span><b id="bar-label">0 / 0</b></span>
   </div>
-  <div class="barrier-track">
-    <div class="barrier-fill" id="fill"></div>
-  </div>
+  <div class="barrier-track"><div class="barrier-fill" id="fill"></div></div>
 </div>
 
 <div class="legend">
-  <span><i style="background:var(--blue)"></i> work — работает</span>
-  <span><i style="background:var(--peach)"></i> arrive — пришёл, ждёт</span>
-  <span><i style="background:var(--red)"></i> prep — лидер готовит</span>
-  <span><i style="background:var(--green)"></i> pass — прошёл</span>
+  <span><i style="background:var(--blue)"></i> work</span>
+  <span><i style="background:var(--peach)"></i> arrive</span>
+  <span><i style="background:var(--red)"></i> prep</span>
+  <span><i style="background:var(--green)"></i> pass</span>
 </div>
 
-<div class="status" id="status">Подключение…</div>
-
 <script>
-const LABELS = {
-  idle:   "Idle",
-  work:   "Working",
-  arrive: "Waiting at barrier",
-  prep:   "PREP (leader)",
-  pass:   "Passed",
-  done:   "Done",
-};
-
+const LABELS = { idle: "Idle", work: "Working", arrive: "Waiting at barrier", prep: "PREP (leader)", pass: "Passed", done: "Done" };
 const els = {
-  threads:   document.getElementById("threads"),
-  round:     document.getElementById("round"),
-  count:     document.getElementById("count"),
-  n:         document.getElementById("n"),
-  sense:     document.getElementById("sense"),
-  phaseStat: document.getElementById("phase-stat"),
-  fill:      document.getElementById("fill"),
-  barLabel:  document.getElementById("bar-label"),
-  status:    document.getElementById("status"),
+  threads: document.getElementById("threads"), round: document.getElementById("round"),
+  count: document.getElementById("count"), n: document.getElementById("n"),
+  sense: document.getElementById("sense"), phaseStat: document.getElementById("phase-stat"),
+  fill: document.getElementById("fill"), barLabel: document.getElementById("bar-label"),
 };
-
-let state = {
-  n: 0,
-  round: 0,
-  count: 0,
-  sense: 0,
-  threads: {},     // id -> state
-};
-
-const threadEls = {};  // id -> { row, box }
+let state = { n: 0, round: 0, count: 0, sense: 0, threads: {} };
+const threadEls = {};
 
 function ensureThread(id) {
   if (threadEls[id]) return;
-  const row = document.createElement("div");
-  row.className = "thread";
-  const label = document.createElement("div");
-  label.className = "thread-label";
-  label.textContent = "T" + id;
-  const box = document.createElement("div");
-  box.className = "thread-state state-idle";
-  box.textContent = LABELS.idle;
-  row.appendChild(label);
-  row.appendChild(box);
-  els.threads.appendChild(row);
-  threadEls[id] = { row, box };
-  state.threads[id] = "idle";
+  const row = document.createElement("div"); row.className = "thread";
+  const label = document.createElement("div"); label.className = "thread-label"; label.textContent = "T" + id;
+  const box = document.createElement("div"); box.className = "thread-state state-idle"; box.textContent = LABELS.idle;
+  row.appendChild(label); row.appendChild(box); els.threads.appendChild(row);
+  threadEls[id] = { row, box }; state.threads[id] = "idle";
 }
 
 function setThreadState(id, st) {
-  ensureThread(id);
-  state.threads[id] = st;
+  ensureThread(id); state.threads[id] = st;
   const { box } = threadEls[id];
   box.className = "thread-state state-" + st;
   box.textContent = LABELS[st] || st;
@@ -200,7 +101,6 @@ function render() {
   els.n.textContent = state.n;
   els.sense.textContent = state.sense;
   els.phaseStat.className = "stat phase" + state.sense;
-
   const pct = state.n ? Math.min(100, (state.count / state.n) * 100) : 0;
   els.fill.style.width = pct + "%";
   els.barLabel.textContent = state.count + " / " + state.n;
@@ -209,50 +109,21 @@ function render() {
 function handleEvent(ev) {
   switch (ev.type) {
     case "reset":
-      state.n = ev.n ?? state.n;
-      state.round = 0;
-      state.count = 0;
-      state.sense = 0;
-      for (let i = 0; i < state.n; i++) {
-        setThreadState(i, "idle");
-      }
-      els.status.textContent = "Демо запущено";
+      state.n = ev.n ?? state.n; state.round = 0; state.count = 0; state.sense = 0;
+      for (let i = 0; i < state.n; i++) setThreadState(i, "idle");
       break;
     case "state":
       setThreadState(ev.thread, ev.state);
       if (ev.state === "work") state.round = ev.round;
       break;
     case "snapshot":
-      state.count = ev.count;
-      state.sense = ev.sense;
-      break;
-    case "finished":
-      els.status.textContent = "Раунд завершён. Перезапуск через 2 секунды…";
-      break;
+      state.count = ev.count; state.sense = ev.sense; break;
   }
   render();
 }
 
-function connect() {
-  const es = new EventSource("/events");
-  es.onopen = () => {
-    els.status.textContent = "Подключено. Ждём события…";
-  };
-  es.onmessage = (e) => {
-    try {
-      handleEvent(JSON.parse(e.data));
-    } catch (err) {
-      console.error("bad event", e.data, err);
-    }
-  };
-  es.onerror = () => {
-    els.status.textContent = "Соединение потеряно. Переподключение…";
-    es.close();
-    setTimeout(connect, 2000);
-  };
-}
-
-connect();
+const es = new EventSource("/events");
+es.onmessage = (e) => { try { handleEvent(JSON.parse(e.data)); } catch (err) { } };
 </script>
 </body>
 </html>
